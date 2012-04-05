@@ -1,0 +1,545 @@
+#!/usr/bin/perl -wT
+# phlog - Parse Horde LOG - Distill a horde log file into statistics.
+# version 1.4.1
+# (Don't forget to change $version to match.)
+#
+# Written by Aaron Bugher for the FSU Biology Department.
+# Tested with perl 5.8.8 .
+#
+# LICENSE:
+#
+#   Copyright (c) 2012, Florida State University
+#   All rights reserved.
+# 
+#   Redistribution and use in source and binary forms, with or without
+#   modification, are permitted provided that the following conditions are met: 
+# 
+#   1. Redistributions of source code must retain the above copyright notice,
+#      this list of conditions and the following disclaimer. 
+#   2. Redistributions in binary form must reproduce the above copyright
+#      notice, this list of conditions and the following disclaimer in the
+#      documentation and/or other materials provided with the distribution. 
+# 
+#   THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+#   AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+#   IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
+#   ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
+#   LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
+#   CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
+#   SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
+#   INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
+#   CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+#   ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
+#   POSSIBILITY OF SUCH DAMAGE.
+# 
+#   The views and conclusions contained in the software and documentation are
+#   those of the authors and should not be interpreted as representing official
+#   policies, either expressed or implied, of the FreeBSD Project.
+#
+# END LICENSE
+#
+#
+# For usage information, do:
+#   phlog -h
+#
+# This tool assumes that your Horde is configured with $conf[log][priority] set
+# to at least  PEAR_LOG_INFO .  More verbose logging MAY work, but less verbose
+# logging will almost certainly not.
+#
+#
+# Changes:
+#
+# 1.4.1
+#   Fixed IP address default sorting.  Code in 1.4 was wrong, and phlog would
+#   explode if you specified -v.
+#
+#   I also forgot to increment the version number in 1.4, so it will
+#   self-report as 1.3.  Fixed in version 1.4.1.
+#
+# 1.4
+#   Bug fix:  verbose IP address listings are now sorted by sent count when -s
+#   is specified.  
+#
+#   Behavior change:  IP address listings are now sorted by sent count by
+#   default.
+#
+# 1.3
+#   There is now a sent count for each ip address (per-user).  Invoke with -v
+#   to see it.
+#
+# 1.2
+#   Now handles multiple "to" addresses in one log entry.  (Oops.)
+#
+#   $fqdn now has slashes added before dots.
+#
+# 1.1
+#   Verbose IP address listings are now sorted by the same criteria as the user
+#   listing, if applicable.  (logins, failures, or attempts)
+#
+#   `phlog -V` now gives version information.
+#
+#   Updated and made minor changes to help text.
+
+use strict;
+use warnings;
+
+my $version = 1.4.1;
+
+# This is declared here to avoid errors whether it gets set or not.  The
+# definition line, which you may wish to edit, is a few lines down.
+my $fqdn;
+
+my $input_file;
+my $switch;
+my %sortdefs;
+my %switches;
+my $sort;
+my $sort_count;
+my $line;
+my $username;
+my @ordered_usernames;
+my @ordered_ipaddresses;
+my $recipient_raw;
+my $recipient;
+my $recipient_copy;
+my $recipient_entry;
+my @recipients;
+my $dquote;
+my $squote;
+my %users;
+my $attempt;
+my $login;
+my $failure;
+my $sent;
+my $received;
+my $ipaddress;
+
+
+# FQDN:
+#
+# Set this to the entire string after the @ for email addresses at your site.
+# For example, my email address is abugher@bio.fsu.edu, and I set this to
+# 'bio.fsu.edu' .  If this is set incorrectly, your users' sent and received
+# messages will be tallied separately, and there may be other problems.
+
+#$fqdn = 'bio.fsu.edu';
+
+# Dots are syntactically significant in regular expressions.  Escape them.
+if(defined($fqdn)) {
+  $fqdn =~ s/(\.)/\\$1/g;
+}
+
+
+# Grab switches from command line (they get removed from the argument list):
+use Getopt::Std;
+getopts('lfaisrcvVhu:', \%switches);
+
+# Output version number if requested.
+if(defined($switches{'V'})) {
+  print "phlog $version\n";
+  exit;
+}
+
+# Help!
+if(defined($switches{'h'})) {
+  print "\n";
+  print "phlog - use this tool to [p]arse a [h]orde [l][o][g].  ;)\n";
+  print "\n";
+  print "FQDN\n";
+  if(defined($fqdn)) {
+    print "  Your fqdn is currently set to:  $fqdn\n";
+  } else {
+    print "Your fqdn is not set.\n";
+  }
+  print "\n";
+  print "  You MUST set this correctly.  Assign \$fqdn your domain name in the script.\n";
+  print "\n";
+  print "Usage:\n";
+  print "  phlog [-u <username>] [-c] [-v] [-l | -f | -a | -i | -s | -r] [logfile]\n";
+  print "  phlog [-h | -V] \n";
+  print "\n";
+  print "Examples:\n";
+  print "  phlog -vu jdoe horde.log\n";
+  print "  grep 'Jun 14' horde.log | phlog\n";
+  print "\n";
+  print "Output looks something like this:\n";
+  print "\n";
+  print "user                                     |  l :   f /   a | i|    s    r   |\n";
+  print "\n";
+  print "  l = logins (successful)\n";
+  print "  f = failures at login\n";
+  print "  a = attempts at login (l + f == a)\n";
+  print "  i = number of IP addresses attempting logins\n";
+  print "  s = sent messages\n";
+  print "  r = received messages\n";
+  print "\n";
+  print "  Precede any one of those letters with a dash to form the flag to sort by that\n  field.  For example, to sort by the number of messages sent:\n";
+  print "\n";
+  print "    phlog -s horde.log\n";
+  print "\n";
+  print "Switches:\n";
+  print "\n";
+  print "  -c  Enable column headers.  Possibly useful if you find the output confusing.\n";
+  print "\n";
+  print "  -v  Verbose.  List per-user IP address stats.\n";
+  print "\n";
+  print "  -u <username>\n";
+  print "      Print only information related to the specified user.\n";
+  print "\n";
+  print "  -h  Display this help text and exit.\n";
+  print "\n";
+  print "  -V  Display the version number and exit.\n";
+  print "\n";
+  print "Notes:\n";
+  print "  This tool assumes that your Horde is configured with \$conf[log][priority]\n";
+  print "  set to at least  PEAR_LOG_INFO .  More verbose logging MAY work, but less\n";
+  print "  verbose logging will almost certainly not.\n";
+  print "\n";
+  print "  \$fqdn is commented out by default.  This is the recommended way to distribute\n";
+  print "  phlog.  There is no sensible default value.  This way phlog will nag you to\n";
+  print "  set the FQDN, instead of operating incorrectly.\n";
+  print "\n";
+
+  exit;
+}
+
+
+# Nag the user to set $fqdn.
+if(!defined($fqdn)) {
+  print "Your fqdn is not set.\n";
+  print "Please edit your copy of phlog, and set \$fqdn to your domain name.\n";
+  exit;
+}
+
+
+# Define sorting switches:
+%sortdefs = (
+  'l' => 'login_count',
+  'f' => 'failure_count',
+  'a' => 'attempt_count',
+  'i' => 'ipaddress_count',
+  's' => 'sent_count',
+  'r' => 'received_count'
+);
+
+# Default sort is alphabetic.
+$sort = 'username';
+
+# Check for each sorting flag.
+$sort_count = 0;
+foreach $switch (keys %sortdefs) {
+  if(defined($switches{$switch})) {
+    $sort = $sortdefs{$switch};
+    $sort_count++;
+  }
+}
+
+
+# We can only sort by one thing.
+if(1 < $sort_count) {
+  print "Specify only one of:  -l -f -a -s -r\n";
+  die;
+}
+
+
+# Perform a little voodoo so the rest of the code can act on STDIN regardless
+# of whether it's really coming from a file.
+if(defined($ARGV[0])) {
+  use IO::Handle;
+  open($input_file, '<', $ARGV[0]) or die "Status: $!  Failed to open $ARGV[0],";
+  STDIN->fdopen(fileno($input_file), 'r' ) or die "Status: $!  Failed to bind stdin to a file handle,";
+}
+
+
+# Main loop - start reading that input.
+while ($line = <STDIN>) {
+
+  # Zap reused variables so they don't get counted twice.
+  $username = "";
+  @recipients = ();
+  $recipient = "";
+  $attempt      = 0;
+  $login        = 0;
+  $failure      = 0;
+  $sent         = 0;
+  $received     = 0;
+  $ipaddress    = undef;
+
+  # Check for various string matches:
+  if($line =~ /Login success for ([^ ]*) \[([0-9\.]*)\]/) {
+    $username = $1;
+    $attempt = 1;
+    $login = 1;
+    $ipaddress = $2;
+  } 
+
+  if($line =~ /FAILED LOGIN for ([^ ]*) \[([0-9\.]*)\]/) {
+    $username = $1;
+    $attempt = 1;
+    $failure = 1;
+    $ipaddress = $2;
+  }
+
+  if($line =~ / ([^\ ]*) Message sent to (.*) from ([^ ]*)/) {
+    $ipaddress = $1;
+    $recipient_raw = $2;
+    $username = $3;                 # sender
+
+
+
+    # Break the list down into entries:
+    $recipient_entry = "";
+    $dquote = 0;
+    $squote = 0;
+    while ($recipient_raw ne "") {
+      $recipient_raw =~ s/(^[^"'\ ]*["'\ ]|^[^"'\ ]+$)//;
+      # Break off a chunk of the big string.
+      $recipient_entry .= $1;
+
+      # Determine whether we are mid-quote.  Backslash handling gets hairy.
+      if ($dquote == 0 and $squote == 0) {
+        if (
+          ($recipient_entry =~ /"$/)
+          and (!($recipient_entry =~ /^(\\\\)*\\"$|[^\\](\\\\)*\\"$/))
+        ){
+          $dquote = 1;          # Open double quote.
+        } elsif (
+          ($recipient_entry =~ /'$/)
+          and (!($recipient_entry =~ /^(\\\\)*\\'$|[^\\](\\\\)*\\'$/))
+        ) {
+          $squote = 1;          # Open single quote.
+        }
+      } elsif ( ($dquote == 1) or ($squote == 1) ) {
+        if (
+          ($recipient_entry =~ /"$/)
+          and (!($recipient_entry =~ /^(\\\\)*\\"$|[^\\](\\\\)*\\"$/))
+        ) {
+          $dquote = 0;          # Close double quote.
+        } elsif (
+          ($recipient_entry =~ /'$/)
+          and (!($recipient_entry =~ /^(\\\\)*\\'$|[^\\](\\\\)*\\'$/))
+        ) {
+          $squote = 0;          # Close single quote.
+        }
+      }
+
+      # If the entry now ends with comma-space, and we're not mid-quote, that's
+      # a complete entry.  Push it to the array.
+      if (
+        ($dquote == 0 and $squote == 0)
+        and ($recipient_entry =~ /, $/)
+      ) {
+
+        push(@recipients, $recipient_entry);
+        $recipient_entry = "";
+      }
+    }
+
+    # Get the last entry, which probably didn't end with a comma.
+    if($recipient_entry ne "") {
+        push(@recipients, $recipient_entry);
+        $recipient_entry = "";
+    }
+
+    # Make a reasonable effort to normalize each address.
+    foreach $recipient (@recipients) {
+      $dquote = 0;
+      $squote = 0;
+
+      # Clip the field delimiters.
+      $recipient =~ s/ $//;
+      $recipient =~ s/,$//;
+
+      # Changes to $recipient affect @recipients.
+      $recipient_copy = $recipient;
+      $recipient = "";
+
+      # Work backward from the comma.
+      while ($recipient_copy ne "") {
+        $recipient_copy =~ s/(["'\ ][^"'\ ]*$|^[^"'\ ]*$)//;
+        $recipient = $1 . $recipient;
+
+        if ($dquote == 0 and $squote == 0) {
+          if (
+            ($recipient =~ /^"/)
+            and (!($recipient_copy =~ /^(\\\\)*\\$|[^\\](\\\\)*\\$/))
+          ){
+            $dquote = 1;        # Open double quote.
+          } elsif (
+            ($recipient =~ /^'/)
+            and (!($recipient_copy =~ /^(\\\\)*\\$|[^\\](\\\\)*\\$/))
+          ){
+            $squote = 1;        # Open single quote.
+          }
+        } elsif ($dquote == 1 or $squote == 1) {
+          if (
+            ($recipient =~ /^"/)
+            and (!($recipient_copy =~ /^(\\\\)*\\$|[^\\](\\\\)*\\$/))
+          ){
+            $dquote = 0;        # Close double quote.
+          } elsif (
+            ($recipient =~ /^'/)
+            and (!($recipient_copy =~ /^(\\\\)*\\$|[^\\](\\\\)*\\$/))
+          ){
+            $squote = 0;        # Close single quote.
+          }
+        }
+
+        # If we're not mid-quote, and we hit a non-escaped space, we have
+        # aquired the entire last string in this entry.  Ignore the rest of the
+        # entry.
+        if(
+          ($dquote == 0 and $squote == 0)
+          and ($recipient =~ /^\ /)
+          and (!($recipient_copy =~ /^(\\\\)*\\$|[^\\](\\\\)*\\$/))
+        ) {
+          # Trim that leading space.
+          $recipient =~ s/^\ //;
+          last;
+        }
+      }
+
+      # Remove angle brackets.
+      $recipient =~ s/^<(.*)>$/$1/;
+
+      # Remove fqdn:
+      $recipient =~ s/\@$fqdn$//;
+    }
+
+    $received = 1;
+    $sent = @recipients;
+  }
+
+  # Declare a new user if necessary.
+  if(! ("" eq $username)) {
+    if(!defined($users{$username})) {
+      # New users can be defined here or a few lines down as a recipient.
+      # Changes should match.
+      $users{$username} = {
+        'login_count'     => 0,
+        'failure_count'   => 0,
+        'attempt_count'   => 0,
+        'ipaddress_count' => 0,
+        'sent_count'      => 0,
+        'received_count'  => 0,
+        'addresses' => {}
+      };
+    }
+
+    # Add data from this line to counts:
+    $users{$username}{'attempt_count'}                  += $attempt;
+    $users{$username}{'login_count'}                    += $login;
+    $users{$username}{'failure_count'}                  += $failure;
+    $users{$username}{'sent_count'}                     += $sent;
+    if(defined($ipaddress)) {
+      if(!defined($users{$username}{'addresses'}{$ipaddress})) {
+        # First occurance of this address for this user.
+        $users{$username}{'addresses'}{$ipaddress} = {
+          'login_count' => 0,
+          'failure_count' => 0,
+          'attempt_count' => 0,
+          'sent_count' => 0
+        };
+        $users{$username}{'ipaddress_count'}++;
+      }
+      $users{$username}{'addresses'}{$ipaddress}{'login_count'}     += $login;
+      $users{$username}{'addresses'}{$ipaddress}{'failure_count'}   += $failure;
+      $users{$username}{'addresses'}{$ipaddress}{'attempt_count'}   += $attempt;
+      $users{$username}{'addresses'}{$ipaddress}{'sent_count'}      += $sent;
+    }
+  }
+
+  # Special handling for the recipient users.
+  foreach $recipient (@recipients) {
+    if(!defined($users{$recipient})) {
+      $users{$recipient} = {
+        'login_count'     => 0,
+        'attempt_count'   => 0,
+        'failure_count'   => 0,
+        'ipaddress_count' => 0,
+        'sent_count'      => 0,
+        'received_count'  => 0,
+        'addresses' => {}
+      }
+    }
+
+    $users{$recipient}{'received_count'} += $received;
+  }
+}
+
+
+# Close file if necessary.
+if(defined($ARGV[0])) {
+  STDIN->close;
+}
+
+
+# Sort:
+if('username' eq $sort) {
+  # Simple alphabetic sort - ascending.
+  @ordered_usernames = sort keys %users;
+} else {
+  # Descending.  Switch $a and $b for ascending order.
+  @ordered_usernames = sort { $users{$b}{$sort} <=> $users{$a}{$sort} } keys %users;
+}
+
+
+# Output time:
+
+# Optionally output some headers:
+if(defined($switches{'c'})) {
+  print "|           username                     | login attempts |IP|    messages |\n";
+  print "|                                        | good:bad/total |  |   sent  rec |\n";
+  print "----------------------------------------------------------------------------\n";
+  print "                                         |                |  |             |\n";
+}
+
+# Catch the -u option and only act on a single user if set.
+if(defined($switches{'u'})) {
+  if(defined($users{$switches{'u'}})) {
+    @ordered_usernames = ( $switches{'u'} );
+  } else {
+    print "User not found:  $switches{'u'}\n";
+    die;
+  }
+}
+
+# Main output:
+foreach $username (@ordered_usernames) {
+  printf(
+    "%-40s |%3d : %3d / %3d |%2d|  %3d  %3d   |\n",
+    $username,
+    $users{$username}{'login_count'},
+    $users{$username}{'failure_count'},
+    $users{$username}{'attempt_count'},
+    $users{$username}{'ipaddress_count'},
+    $users{$username}{'sent_count'},
+    $users{$username}{'received_count'}
+  );
+  
+  # If verbosity is requested (-v), display each IP address.
+  if(defined($switches{'v'})) {
+    # Sort IP addresses.
+    if($sort =~ /login_count|failure_count|attempt_count|sent_count/) {
+      @ordered_ipaddresses = sort {
+        $users{$username}{'addresses'}{$b}{$sort} <=> $users{$username}{'addresses'}{$a}{$sort}
+      } keys %{$users{$username}{'addresses'}};
+    } else {
+      @ordered_ipaddresses = sort {
+        $users{$username}{'addresses'}{$b}{'sent_count'} <=> $users{$username}{'addresses'}{$a}{'sent_count'}
+      } keys %{$users{$username}{'addresses'}};
+    } 
+
+    # Output IP addresses.
+    foreach $ipaddress (@ordered_ipaddresses) {
+      printf(
+        "  %-38s |%3d : %3d / %3d |  |  %3d        |\n",
+        $ipaddress,
+        $users{$username}{'addresses'}{$ipaddress}{'login_count'},
+        $users{$username}{'addresses'}{$ipaddress}{'failure_count'},
+        $users{$username}{'addresses'}{$ipaddress}{'attempt_count'},
+        $users{$username}{'addresses'}{$ipaddress}{'sent_count'}
+      );
+    }
+  }
+}
