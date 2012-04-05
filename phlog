@@ -1,6 +1,6 @@
 #!/usr/bin/perl -wT
 # phlog - Parse Horde LOG - Distill a horde log file into statistics.
-# version 1.4.1
+# version 1.4.2
 # (Don't forget to change $version to match.)
 #
 # Written by Aaron Bugher for the FSU Biology Department.
@@ -49,6 +49,10 @@
 #
 # Changes:
 #
+# 1.4.2
+#   Documentation fix:  Adding -i to the list of mutually exclusive listing
+#   switches.
+#
 # 1.4.1
 #   Fixed IP address default sorting.  Code in 1.4 was wrong, and phlog would
 #   explode if you specified -v.
@@ -83,7 +87,7 @@
 use strict;
 use warnings;
 
-my $version = 1.4.1;
+my $version = 1.4.2;
 
 # This is declared here to avoid errors whether it gets set or not.  The
 # definition line, which you may wish to edit, is a few lines down.
@@ -237,7 +241,7 @@ foreach $switch (keys %sortdefs) {
 
 # We can only sort by one thing.
 if(1 < $sort_count) {
-  print "Specify only one of:  -l -f -a -s -r\n";
+  print "Specify only one of:  -l -f -a -i -s -r\n";
   die;
 }
 
