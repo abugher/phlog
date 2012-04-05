@@ -1,0 +1,7 @@
+phlog is a horde log parser.  Given a horde log with verbosity of at least
+INFO, phlog will give you statistics on a per-user basis, such as how many
+times each user logged in (or attempted to log in), or how many messages he
+sent.
+
+The best source of documentation at the moment is `phlog -h`.  If you still
+have a question, consult the code or contact the author.
