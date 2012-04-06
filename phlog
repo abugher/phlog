@@ -1,6 +1,6 @@
 #!/usr/bin/perl -wT
 # phlog - Parse Horde LOG - Distill a horde log file into statistics.
-# version 1.4.3
+# version 1.4.4
 # (Don't forget to change $version to match.)
 #
 # Written by Aaron Bugher for the FSU Biology Department.
@@ -48,6 +48,9 @@
 #
 #
 # Changes:
+# 1.4.4
+#   Prettied up the code a little.  Adjusted comments, whitespace, and
+#   corrected some style issues.  No (intentional) change to functionality.
 #
 # 1.4.3
 #   Bug fix:  Version number is now set as a string.  A number with more than
@@ -92,36 +95,42 @@
 use strict;
 use warnings;
 
-my $version = '1.4.3';
+my $version = '1.4.4';
 
 # This is declared here to avoid errors whether it gets set or not.  The
 # definition line, which you may wish to edit, is a few lines down.
 my $fqdn;
 
 my $input_file;
-my $switch;
-my %sortdefs;
+
 my %switches;
+my $switch;
+
+my %sortdefs;
 my $sort;
 my $sort_count;
-my $line;
-my $username;
+
+my %users;
 my @ordered_usernames;
 my @ordered_ipaddresses;
+my @recipients;
+
+my $line;
+my $username;
 my $recipient_raw;
 my $recipient;
 my $recipient_copy;
 my $recipient_entry;
-my @recipients;
+
 my $dquote;
 my $squote;
-my %users;
-my $attempt;
+
 my $login;
 my $failure;
+my $attempt;
+my $ipaddress;
 my $sent;
 my $received;
-my $ipaddress;
 
 
 # FQDN:
@@ -143,13 +152,15 @@ if(defined($fqdn)) {
 use Getopt::Std;
 getopts('lfaisrcvVhu:', \%switches);
 
+
 # Output version number if requested.
 if(defined($switches{'V'})) {
   print "phlog $version\n";
   exit;
 }
 
-# Help!
+
+# Output help if requested.
 if(defined($switches{'h'})) {
   print "\n";
   print "phlog - use this tool to [p]arse a [h]orde [l][o][g].  ;)\n";
@@ -213,7 +224,7 @@ if(defined($switches{'h'})) {
 }
 
 
-# Nag the user to set $fqdn.
+# Nag the user to set $fqdn if not set.
 if(!defined($fqdn)) {
   print "Your fqdn is not set.\n";
   print "Please edit your copy of phlog, and set \$fqdn to your domain name.\n";
@@ -243,7 +254,6 @@ foreach $switch (keys %sortdefs) {
   }
 }
 
-
 # We can only sort by one thing.
 if(1 < $sort_count) {
   print "Specify only one of:  -l -f -a -i -s -r\n";
@@ -263,7 +273,7 @@ if(defined($ARGV[0])) {
 # Main loop - start reading that input.
 while ($line = <STDIN>) {
 
-  # Zap reused variables so they don't get counted twice.
+  # Zap reused counter variables so they don't get counted twice.
   $username = "";
   @recipients = ();
   $recipient = "";
@@ -274,7 +284,7 @@ while ($line = <STDIN>) {
   $received     = 0;
   $ipaddress    = undef;
 
-  # Check for various string matches:
+  # Is this a successful login record?
   if($line =~ /Login success for ([^ ]*) \[([0-9\.]*)\]/) {
     $username = $1;
     $attempt = 1;
@@ -282,6 +292,7 @@ while ($line = <STDIN>) {
     $ipaddress = $2;
   } 
 
+  # Is this a failed login record?
   if($line =~ /FAILED LOGIN for ([^ ]*) \[([0-9\.]*)\]/) {
     $username = $1;
     $attempt = 1;
@@ -289,24 +300,23 @@ while ($line = <STDIN>) {
     $ipaddress = $2;
   }
 
+  # Is this a sent message record?
   if($line =~ / ([^\ ]*) Message sent to (.*) from ([^ ]*)/) {
     $ipaddress = $1;
     $recipient_raw = $2;
     $username = $3;                 # sender
-
-
 
     # Break the list down into entries:
     $recipient_entry = "";
     $dquote = 0;
     $squote = 0;
     while ($recipient_raw ne "") {
+      # Break off a chunk of the big recipient list.
       $recipient_raw =~ s/(^[^"'\ ]*["'\ ]|^[^"'\ ]+$)//;
-      # Break off a chunk of the big string.
       $recipient_entry .= $1;
 
       # Determine whether we are mid-quote.  Backslash handling gets hairy.
-      if ($dquote == 0 and $squote == 0) {
+      if ((0 == $dquote) and (0 == $squote)) {
         if (
           ($recipient_entry =~ /"$/)
           and (!($recipient_entry =~ /^(\\\\)*\\"$|[^\\](\\\\)*\\"$/))
@@ -318,7 +328,7 @@ while ($line = <STDIN>) {
         ) {
           $squote = 1;          # Open single quote.
         }
-      } elsif ( ($dquote == 1) or ($squote == 1) ) {
+      } elsif ((1 == $dquote ) or (1 == $squote)) {
         if (
           ($recipient_entry =~ /"$/)
           and (!($recipient_entry =~ /^(\\\\)*\\"$|[^\\](\\\\)*\\"$/))
@@ -335,10 +345,9 @@ while ($line = <STDIN>) {
       # If the entry now ends with comma-space, and we're not mid-quote, that's
       # a complete entry.  Push it to the array.
       if (
-        ($dquote == 0 and $squote == 0)
+        ((0 == $dquote) and (0 == $squote))
         and ($recipient_entry =~ /, $/)
       ) {
-
         push(@recipients, $recipient_entry);
         $recipient_entry = "";
       }
@@ -363,12 +372,14 @@ while ($line = <STDIN>) {
       $recipient_copy = $recipient;
       $recipient = "";
 
-      # Work backward from the comma.
+      # This loop transfers part of $recipient_copy back to $recipient.  The
+      # idea is that $recipient will then hold the bare email address.
       while ($recipient_copy ne "") {
+        # Break off the end of the string.  We're working backward.
         $recipient_copy =~ s/(["'\ ][^"'\ ]*$|^[^"'\ ]*$)//;
         $recipient = $1 . $recipient;
 
-        if ($dquote == 0 and $squote == 0) {
+        if ((0 == $dquote) and (0 == $squote)) {
           if (
             ($recipient =~ /^"/)
             and (!($recipient_copy =~ /^(\\\\)*\\$|[^\\](\\\\)*\\$/))
@@ -380,7 +391,7 @@ while ($line = <STDIN>) {
           ){
             $squote = 1;        # Open single quote.
           }
-        } elsif ($dquote == 1 or $squote == 1) {
+        } elsif ((1 == $dquote) or (1 == $squote)) {
           if (
             ($recipient =~ /^"/)
             and (!($recipient_copy =~ /^(\\\\)*\\$|[^\\](\\\\)*\\$/))
@@ -395,10 +406,9 @@ while ($line = <STDIN>) {
         }
 
         # If we're not mid-quote, and we hit a non-escaped space, we have
-        # aquired the entire last string in this entry.  Ignore the rest of the
-        # entry.
+        # aquired the email address.  Ignore the rest of the entry.
         if(
-          ($dquote == 0 and $squote == 0)
+          ((0 == $dquote) and (0 == $squote))
           and ($recipient =~ /^\ /)
           and (!($recipient_copy =~ /^(\\\\)*\\$|[^\\](\\\\)*\\$/))
         ) {
@@ -408,15 +418,15 @@ while ($line = <STDIN>) {
         }
       }
 
-      # Remove angle brackets.
+      # Remove angle brackets, if present.
       $recipient =~ s/^<(.*)>$/$1/;
 
-      # Remove fqdn:
+      # Remove fqdn, if present:
       $recipient =~ s/\@$fqdn$//;
     }
 
     $received = 1;
-    $sent = @recipients;
+    $sent = @recipients;        # count of recipients = messages sent
   }
 
   # Declare a new user if necessary.
@@ -435,7 +445,7 @@ while ($line = <STDIN>) {
       };
     }
 
-    # Add data from this line to counts:
+    # Add data from this log line to counters.
     $users{$username}{'attempt_count'}                  += $attempt;
     $users{$username}{'login_count'}                    += $login;
     $users{$username}{'failure_count'}                  += $failure;
@@ -493,7 +503,8 @@ if('username' eq $sort) {
 }
 
 
-# Output time:
+# Begin output.
+
 
 # Optionally output some headers:
 if(defined($switches{'c'})) {
@@ -502,6 +513,7 @@ if(defined($switches{'c'})) {
   print "----------------------------------------------------------------------------\n";
   print "                                         |                |  |             |\n";
 }
+
 
 # Catch the -u option and only act on a single user if set.
 if(defined($switches{'u'})) {
@@ -513,8 +525,10 @@ if(defined($switches{'u'})) {
   }
 }
 
+
 # Main output:
 foreach $username (@ordered_usernames) {
+  # The basic line of output.
   printf(
     "%-40s |%3d : %3d / %3d |%2d|  %3d  %3d   |\n",
     $username,
@@ -528,12 +542,13 @@ foreach $username (@ordered_usernames) {
   
   # If verbosity is requested (-v), display each IP address.
   if(defined($switches{'v'})) {
-    # Sort IP addresses.
+    # Sort IP addresses by the same field as main output, if possible.
     if($sort =~ /login_count|failure_count|attempt_count|sent_count/) {
       @ordered_ipaddresses = sort {
         $users{$username}{'addresses'}{$b}{$sort} <=> $users{$username}{'addresses'}{$a}{$sort}
       } keys %{$users{$username}{'addresses'}};
     } else {
+      # By default, sort by sent messages.
       @ordered_ipaddresses = sort {
         $users{$username}{'addresses'}{$b}{'sent_count'} <=> $users{$username}{'addresses'}{$a}{'sent_count'}
       } keys %{$users{$username}{'addresses'}};
