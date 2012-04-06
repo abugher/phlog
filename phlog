@@ -1,6 +1,6 @@
 #!/usr/bin/perl -wT
 # phlog - Parse Horde LOG - Distill a horde log file into statistics.
-# version 1.4.2
+# version 1.4.3
 # (Don't forget to change $version to match.)
 #
 # Written by Aaron Bugher for the FSU Biology Department.
@@ -49,6 +49,11 @@
 #
 # Changes:
 #
+# 1.4.3
+#   Bug fix:  Version number is now set as a string.  A number with more than
+#   one decimal point doesn't make sense to perl, so version output was just
+#   "phlog " after the third part of the version number was added.
+#
 # 1.4.2
 #   Documentation fix:  Adding -i to the list of mutually exclusive listing
 #   switches.
@@ -87,7 +92,7 @@
 use strict;
 use warnings;
 
-my $version = 1.4.2;
+my $version = '1.4.3';
 
 # This is declared here to avoid errors whether it gets set or not.  The
 # definition line, which you may wish to edit, is a few lines down.
