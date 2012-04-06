@@ -1,7 +1,45 @@
-phlog is a horde log parser.  Given a horde log with verbosity of at least
-INFO, phlog will give you statistics on a per-user basis, such as how many
-times each user logged in (or attempted to log in), or how many messages he
-sent.
+The best source of documentation is `phlog -h`.  Consider this text a bare
+primer on what phlog is and does.
 
-The best source of documentation at the moment is `phlog -h`.  If you still
-have a question, consult the code or contact the author.
+phlog will Parse your Horde LOGs.  (P H LOG ... get it?  Nevermind.)  Given a
+log from the webmail application Horde, phlog will output per-user statistics,
+including how many times each user logged in, how many messages he sent, how
+many distinct IP addresses were seen for this user, and several other related
+data points.
+
+Prerequisites:
+
+  You need Perl.  You'll probably need to change the first line to reflect the
+  location of perl on your system.  
+  
+  phlog was originally tested under Perl 5.8.8.  Later versions of Perl will
+  probably be fine.  If phlog fails to work due to incompatibility with a later
+  version of Perl, consider that a bug.  If it fails to work with an earlier
+  version of Perl, reasonable changes may be made to accomodate, but this will
+  be considered an enhancement request, not a bug.
+
+  Your Horde installation must be set to log level PEAR_LOG_INFO.  More
+  verbosity may work, but has not been tested.  (Bug reports welcome on this.)
+  Less verbose logging won't produce the data for which phlog is designed.
+
+  FreeBSD is the only tested platform so far.  If you find that it does or does
+  not work on some other OS, I'd be interested to know.  I would expect it to
+  work with a minimum of fuss on any system with Perl.
+
+  Set your FQDN.  phlog needs to know the fully qualified domain name it will
+  be using.  Uncomment the line where $fqdn is defined and set its value to
+  your domain.
+
+Usage:
+  
+  phlog [options] <horde.log>
+
+  [command] | phlog [options]
+
+  Options can be seen in `phlog -h`.  Most of them control sorting.  Some
+  notable options:
+
+    -h          Show help and exit.
+    -V          Show version number and exit.
+    -c          Show column headers above output.
+    -v          Verbose - show IP addresses for each user.
