@@ -1,6 +1,6 @@
 #!/usr/bin/perl -wT
 # phlog - Parse Horde LOG - Distill a horde log file into statistics.
-# version 1.4.4
+# version 1.5
 # (Don't forget to change $version to match.)
 #
 # Written by Aaron Bugher for the FSU Biology Department.
@@ -95,7 +95,7 @@
 use strict;
 use warnings;
 
-my $version = '1.4.4';
+my $version = '1.5';
 
 # This is declared here to avoid errors whether it gets set or not.  The
 # definition line, which you may wish to edit, is a few lines down.
@@ -124,6 +124,7 @@ my $recipient_entry;
 
 my $dquote;
 my $squote;
+my $abracket;           # Angle brackets count as quotes.
 
 my $login;
 my $failure;
@@ -310,13 +311,14 @@ while ($line = <STDIN>) {
     $recipient_entry = "";
     $dquote = 0;
     $squote = 0;
+    $abracket = 0;
     while ($recipient_raw ne "") {
       # Break off a chunk of the big recipient list.
       $recipient_raw =~ s/(^[^"'\ ]*["'\ ]|^[^"'\ ]+$)//;
       $recipient_entry .= $1;
 
       # Determine whether we are mid-quote.  Backslash handling gets hairy.
-      if ((0 == $dquote) and (0 == $squote)) {
+      if ((0 == $dquote) and (0 == $squote) and (0 == $abracket)) {
         if (
           ($recipient_entry =~ /"$/)
           and (!($recipient_entry =~ /^(\\\\)*\\"$|[^\\](\\\\)*\\"$/))
@@ -327,8 +329,13 @@ while ($line = <STDIN>) {
           and (!($recipient_entry =~ /^(\\\\)*\\'$|[^\\](\\\\)*\\'$/))
         ) {
           $squote = 1;          # Open single quote.
+        } elsif (
+          ($recipient_entry =~ /<$/)
+          and (!($recipient_entry =~ /^(\\\\)*\\<$|[^\\](\\\\)*\\<$/))
+        ) {
+          $abracket = 1;        # Open angle bracket.
         }
-      } elsif ((1 == $dquote ) or (1 == $squote)) {
+      } elsif ((1 == $dquote ) or (1 == $squote) or (1 == $abracket)) {
         if (
           ($recipient_entry =~ /"$/)
           and (!($recipient_entry =~ /^(\\\\)*\\"$|[^\\](\\\\)*\\"$/))
@@ -339,6 +346,11 @@ while ($line = <STDIN>) {
           and (!($recipient_entry =~ /^(\\\\)*\\'$|[^\\](\\\\)*\\'$/))
         ) {
           $squote = 0;          # Close single quote.
+        } elsif (
+          ($recipient_entry =~ />$/)
+          and (!($recipient_entry =~ /^(\\\\)*\\>$|[^\\](\\\\)*\\>$/))
+        ) {
+          $abracket = 0;        # Close angle bracket.
         }
       }
 
@@ -363,6 +375,7 @@ while ($line = <STDIN>) {
     foreach $recipient (@recipients) {
       $dquote = 0;
       $squote = 0;
+      $abracket = 0;
 
       # Clip the field delimiters.
       $recipient =~ s/ $//;
@@ -376,10 +389,10 @@ while ($line = <STDIN>) {
       # idea is that $recipient will then hold the bare email address.
       while ($recipient_copy ne "") {
         # Break off the end of the string.  We're working backward.
-        $recipient_copy =~ s/(["'\ ][^"'\ ]*$|^[^"'\ ]*$)//;
+        $recipient_copy =~ s/(["'><\ ][^"'><\ ]*$|^[^"'><\ ]*$)//;
         $recipient = $1 . $recipient;
 
-        if ((0 == $dquote) and (0 == $squote)) {
+        if ((0 == $dquote) and (0 == $squote) and (0 == $abracket)) {
           if (
             ($recipient =~ /^"/)
             and (!($recipient_copy =~ /^(\\\\)*\\$|[^\\](\\\\)*\\$/))
@@ -390,8 +403,13 @@ while ($line = <STDIN>) {
             and (!($recipient_copy =~ /^(\\\\)*\\$|[^\\](\\\\)*\\$/))
           ){
             $squote = 1;        # Open single quote.
+          } elsif (
+            ($recipient =~ /^>/)
+            and (!($recipient_copy =~ /^(\\\\)*\\$|[^\\](\\\\)*\\$/))
+          ){
+            $abracket = 1;        # Open angle bracket.
           }
-        } elsif ((1 == $dquote) or (1 == $squote)) {
+        } elsif ((1 == $dquote) or (1 == $squote) or (1 == $abracket)) {
           if (
             ($recipient =~ /^"/)
             and (!($recipient_copy =~ /^(\\\\)*\\$|[^\\](\\\\)*\\$/))
@@ -402,6 +420,11 @@ while ($line = <STDIN>) {
             and (!($recipient_copy =~ /^(\\\\)*\\$|[^\\](\\\\)*\\$/))
           ){
             $squote = 0;        # Close single quote.
+          } elsif (
+            ($recipient =~ /^</)
+            and (!($recipient_copy =~ /^(\\\\)*\\$|[^\\](\\\\)*\\$/))
+          ){
+            $abracket = 0;        # Close angle bracket.
           }
         }
 
