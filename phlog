@@ -1,6 +1,6 @@
 #!/usr/bin/perl -wT
 # phlog - Parse Horde LOG - Distill a horde log file into statistics.
-# version 1.5
+# version 1.5.1
 # (Don't forget to change $version to match.)
 #
 # Written by Aaron Bugher for the FSU Biology Department.
@@ -48,6 +48,13 @@
 #
 #
 # Changes:
+#
+# 1.5.1
+#   Added a previously missing changelog entry for 1.5.
+#
+# 1.5
+#   Angle brackets now count as a form of quotation marks.
+#
 # 1.4.4
 #   Prettied up the code a little.  Adjusted comments, whitespace, and
 #   corrected some style issues.  No (intentional) change to functionality.
@@ -95,7 +102,7 @@
 use strict;
 use warnings;
 
-my $version = '1.5';
+my $version = '1.5.1';
 
 # This is declared here to avoid errors whether it gets set or not.  The
 # definition line, which you may wish to edit, is a few lines down.
